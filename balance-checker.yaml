@@ -1,0 +1,33 @@
+providers:
+    - name: MINIMAX官方
+      enabled: true
+      method: GET
+      url: https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains
+      headers: |-
+        {
+          "Authorization": "Bearer {api_key}",
+          "Content-Type": "application/json"
+        }
+      body: ""
+      balance_path: $.model_remains[0].current_interval_usage_count
+      balance_type: float
+      balance_multiplier: 0.05
+      used_balance_path: $.model_remains[0].current_interval_total_count-$.model_remains[0].current_interval_usage_count
+      reset_cycle_path: $.model_remains[0].end_time
+      enable_proxy: false
+    - name: 智谱官方
+      enabled: true
+      method: GET
+      url: https://open.bigmodel.cn/api/biz/tokenAccounts/list/my?pageNum=1&pageSize=10&filterEnabled=false
+      headers: |-
+        {
+          "Authorization": "Bearer {api_key}",
+          "Content-Type": "application/json"
+        }
+      body: ""
+      balance_path: rows.#(tokenNo%\"bundle_848\").tokenBalance
+      balance_type: float
+      balance_multiplier: 1e-06
+      used_balance_path: rows.#(tokenNo%\"bundle_848\").tokensMagnitude-rows.#(tokenNo%\"bundle_848\").tokenBalance
+      reset_cycle_path: rows.#(tokenNo%\"bundle_848\").expirationTime
+      enable_proxy: false

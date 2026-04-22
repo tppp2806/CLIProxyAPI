@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>余额检查 - Balance Checker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { color: #00d9ff; margin-bottom: 20px; font-size: 24px; display: flex; justify-content: space-between; align-items: center; }
+    .loading { text-align: center; padding: 40px; color: #00d9ff; }
+    .loading::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
+    @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
+    .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .result-card { background: #16213e; border-radius: 8px; padding: 16px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+    .result-card:hover { border-color: #00d9ff; transform: translateY(-2px); }
+    .result-card.success { border-left: 4px solid #2ecc71; }
+    .result-card.error { border-left: 4px solid #e74c3c; }
+    .result-card.pending { border-left: 4px solid #f39c12; }
+    .result-card .name { font-weight: 600; color: #00d9ff; margin-bottom: 8px; font-size: 14px; }
+    .result-card .balance { font-size: 28px; font-weight: 700; color: #2ecc71; margin: 8px 0; }
+    .result-card.error .balance { color: #e74c3c; font-size: 16px; }
+    .result-card.pending .balance { color: #f39c12; font-size: 14px; }
+    .result-card .info { font-size: 12px; color: #94a3b8; margin-top: 8px; }
+    .result-card .api-key { font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; }
+    .result-card .error-msg { color: #e74c3c; font-size: 12px; margin-top: 8px; }
+    .result-card .progress-bar { height: 6px; background: #0f3460; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .result-card .progress-bar .progress { height: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); border-radius: 3px; transition: width 0.3s; }
+    .result-card .progress-bar .progress.warning { background: linear-gradient(90deg, #f39c12, #e67e22); }
+    .result-card .progress-bar .progress.danger { background: linear-gradient(90deg, #e74c3c, #c0392b); }
+    .empty-state { text-align: center; padding: 60px; color: #64748b; background: #16213e; border-radius: 8px; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-content { background: #16213e; border-radius: 8px; padding: 24px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+    .modal-title { color: #00d9ff; margin-bottom: 20px; font-size: 18px; display: flex; justify-content: space-between; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; margin-bottom: 4px; color: #94a3b8; font-size: 12px; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px 12px; background: #0f3460; border: 1px solid #1e3a5f; border-radius: 4px; color: #fff; font-size: 13px; }
+    .form-group textarea { min-height: 60px; resize: vertical; font-family: monospace; }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: #00d9ff; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+    .btn-primary { background: #00d9ff; color: #1a1a2e; }
+    .btn-primary:hover { background: #00b8d9; }
+    .btn-secondary { background: #0f3460; color: #fff; }
+    .btn-secondary:hover { background: #1e3a5f; }
+    .btn-danger { background: #e74c3c; color: #fff; }
+    .btn-danger:hover { background: #c0392b; }
+    .actions { display: flex; gap: 8px; margin-top: 20px; }
+    .row { display: flex; gap: 10px; }
+    .row .form-group { flex: 1; }
+    .info-bar { font-size: 12px; color: #64748b; margin-bottom: 20px; display: flex; gap: 20px; }
+    .info-bar span { display: flex; align-items: center; gap: 5px; }
+    .has-key { color: #2ecc71; }
+    .no-key { color: #e74c3c; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #16213e;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 4px;
+      z-index: 2000;
+      opacity: 0;
+      transition: opacity 0.3s;
+      border: 1px solid #00d9ff;
+    }
+    .toast.show { opacity: 1; }
+    .cards-container { display: flex; flex-wrap: wrap; gap: 12px; }
+    .result-card { background: #16213e; border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; border: 2px solid; min-width: 200px; flex: 1 1 calc(33.33% - 12px); }
+    .result-card:hover { transform: translateY(-2px); }
+    .result-card.success { border-left-width: 4px; }
+    .result-card.error { border-left-width: 4px; }
+    .result-card.pending { border-left-width: 4px; }
+    .result-card .name { font-weight: 600; margin-bottom: 6px; font-size: 13px; display: flex; justify-content: space-between; }
+    .result-card .balance { font-size: 22px; font-weight: 700; margin: 6px 0; }
+    .result-card.error .balance { color: #e74c3c; font-size: 14px; }
+    .result-card.pending .balance { color: #f39c12; font-size: 14px; }
+    .result-card .info { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .result-card .api-key { font-size: 10px; color: #64748b; margin-top: 2px; font-family: monospace; }
+    .result-card .error-msg { color: #e74c3c; font-size: 11px; margin-top: 4px; }
+    .result-card .progress-bar { height: 5px; background: #0f3460; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+    .result-card .progress-bar .progress { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <span>余额检查</span>
+      <button class="btn btn-secondary" onclick="refreshAll()">刷新全部</button>
+    </h1>
+    <div class="info-bar">
+      <span id="providerCount">加载中...</span>
+      <span id="keyStatus"></span>
+    </div>
+    <div id="content">
+      <div class="loading">正在加载</div>
+    </div>
+  </div>
+
+  <div id="modal" style="display:none;"></div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let openaiProviders = [];
+    let balanceConfigs = {};
+
+    async function init() {
+      await loadProviders();
+      await loadBalanceConfigs();
+      await queryAllBalances();
+    }
+
+    async function loadProviders() {
+      try {
+        const resp = await fetch('/v0/balance/openai-providers');
+        const data = await resp.json();
+        openaiProviders = data.providers || [];
+        document.getElementById('providerCount').textContent = '共 ' + openaiProviders.length + ' 个渠道';
+        const hasKeys = openaiProviders.filter(p => p.has_api_key).length;
+        const keyStatus = document.getElementById('keyStatus');
+        keyStatus.innerHTML = hasKeys > 0
+          ? '<span class="has-key">●</span> ' + hasKeys + ' 个渠道已配置 API Key'
+          : '<span class="no-key">●</span> 未配置 API Key';
+      } catch (e) {
+        console.error('Failed to load providers:', e);
+      }
+    }
+
+    async function loadBalanceConfigs() {
+      try {
+        const resp = await fetch('/v0/balance/providers');
+        const data = await resp.json();
+        balanceConfigs = {};
+        (data.providers || []).forEach(p => {
+          balanceConfigs[p.name] = p;
+        });
+      } catch (e) {
+        console.error('Failed to load balance configs:', e);
+        balanceConfigs = {};
+      }
+    }
+
+    async function queryAllBalances() {
+      const content = document.getElementById('content');
+      content.innerHTML = '<div class="loading">正在查询余额</div>';
+
+      if (openaiProviders.length === 0) {
+        content.innerHTML = '<div class="empty-state">没有找到 OpenAI 兼容渠道配置<br><br>请先在 config.yaml 中配置 openai-compatibility</div>';
+        return;
+      }
+
+      // Generate unique color for each provider based on name hash
+      const getGroupColor = (name) => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+          hash = ((hash << 5) - hash) + name.charCodeAt(i);
+        }
+        const hue = Math.abs(hash % 360);
+        return 'hsl(' + hue + ', 70%, 60%)';
+      };
+
+      // Render all cards in a single flex container
+      let html = '<div class="cards-container">';
+      for (let g = 0; g < openaiProviders.length; g++) {
+        const p = openaiProviders[g];
+        const hasConfig = balanceConfigs[p.name] && balanceConfigs[p.name].url;
+        const apiKeys = p.api_keys || [];
+        const color = getGroupColor(p.name);
+
+        // If no API keys, show one pending card
+        if (apiKeys.length === 0) {
+          html += renderCard({
+            provider: p.name,
+            groupColor: color,
+            apiKeyIndex: 0,
+            success: hasConfig ? null : 'pending',
+            error: hasConfig ? null : '待配置余额查询'
+          });
+        } else {
+          // One card per API key
+          for (let i = 0; i < apiKeys.length; i++) {
+            html += renderCard({
+              provider: p.name,
+              groupColor: color,
+              apiKeyIndex: i,
+              apiKey: apiKeys[i],
+              success: hasConfig ? null : 'pending',
+              error: hasConfig ? null : '待配置余额查询'
+            });
+          }
+        }
+      }
+      html += '</div>';
+      content.innerHTML = html;
+
+      // Then query only those with configs
+      for (let g = 0; g < openaiProviders.length; g++) {
+        const p = openaiProviders[g];
+        if (balanceConfigs[p.name] && balanceConfigs[p.name].url) {
+          const apiKeys = p.api_keys || [];
+          if (apiKeys.length === 0) {
+            await queryAndUpdateCard(p.name, 0, null);
+          } else {
+            for (let i = 0; i < apiKeys.length; i++) {
+              await queryAndUpdateCard(p.name, i, apiKeys[i]);
+            }
+          }
+        }
+      }
+    }
+
+    function renderCard(r) {
+      const cardId = r.provider + '_' + r.apiKeyIndex;
+      const cardClass = r.success === null ? 'pending' : (r.success ? 'success' : 'error');
+      const color = r.groupColor || '#00d9ff';
+      let onclickAttr = 'showEditModal(\'' + escapeHtml(r.provider) + '\')';
+      if (r.apiKey != null) {
+        onclickAttr += ', ' + r.apiKeyIndex;
+      }
+      let html = '<div class="result-card ' + cardClass + '" id="card-' + cardId + '" data-color="' + color + '" style="border-color:' + color + ';border-left-color:' + color + ';" onclick="' + onclickAttr + '">';
+      html += '<div class="name" style="color:' + color + ';">' + escapeHtml(r.provider);
+      if (r.apiKey) {
+        html += ' <span style="color:#64748b;font-size:10px;">#' + (r.apiKeyIndex + 1) + '</span>';
+      }
+      html += '</div>';
+      if (r.apiKey) {
+        html += '<div class="api-key">' + escapeHtml(r.apiKey.substring(0, 8)) + '...' + '</div>';
+      }
+      if (cardClass === 'pending') {
+        html += '<div class="balance">待配置</div>';
+        html += '<div class="info">点击配置余额查询</div>';
+      } else if (r.success) {
+        // balance = 可用余额, used_balance = 已用余额
+        html += '<div class="balance" style="color:' + color + '">' + (r.balance != null ? formatNumber(r.balance) : 'N/A') + '</div>';
+        if (r.used_balance > 0) {
+          html += '<div class="info">已用: ' + formatNumber(r.used_balance) + '</div>';
+        }
+        if (r.reset_cycle) {
+          html += '<div class="info">重置: ' + formatRemainTime(r.reset_cycle) + '</div>';
+        }
+        // Progress bar: used / (balance + used)
+        if (r.balance > 0 || r.used_balance > 0) {
+          const total = r.balance + r.used_balance;
+          const usedPercent = total > 0 ? (r.used_balance / total * 100) : 0;
+          const progressClass = usedPercent > 90 ? 'danger' : (usedPercent > 70 ? 'warning' : '');
+          const progressColor = usedPercent > 90 ? '#e74c3c' : (usedPercent > 70 ? '#f39c12' : color);
+          html += '<div class="progress-bar"><div class="progress ' + progressClass + '" style="width:' + usedPercent.toFixed(1) + '%;background:' + progressColor + '"></div></div>';
+        }
+      } else {
+        html += '<div class="balance">查询失败</div>';
+        html += '<div class="error-msg">' + escapeHtml(r.error || '未知错误') + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    async function queryAndUpdateCard(providerName, apiKeyIndex, apiKey) {
+      const cardId = providerName + '_' + apiKeyIndex;
+      try {
+        const headers = {};
+        if (apiKey) {
+          headers['X-API-Key'] = apiKey;
+        }
+        const resp = await fetch('/v0/balance/query/' + encodeURIComponent(providerName), {
+          method: 'POST',
+          headers: headers
+        });
+        const data = await resp.json();
+        const card = document.getElementById('card-' + cardId);
+        if (card) {
+          const groupColor = card.getAttribute('data-color');
+          card.outerHTML = renderCard({
+            provider: providerName,
+            groupColor: groupColor,
+            apiKeyIndex: apiKeyIndex,
+            apiKey: apiKey,
+            success: data.success,
+            balance: data.balance,
+            used_balance: data.used_balance,
+            reset_cycle: data.reset_cycle,
+            error: data.error
+          });
+        }
+      } catch (e) {
+        console.error('Query failed for', providerName, e);
+      }
+    }
+
+    async function showEditModal(providerName, apiKeyIndex) {
+      const provider = openaiProviders.find(p => p.name === providerName);
+      const config = balanceConfigs[providerName] || {};
+      const hasConfig = config.url;
+      const apiKeys = provider?.api_keys || [];
+      const apiKey = apiKeyIndex != null && apiKeys[apiKeyIndex] ? apiKeys[apiKeyIndex] : null;
+
+      const html = `
+        <div class="modal">
+          <div class="modal-content">
+            <div class="modal-title">
+              <span>配置: ${escapeHtml(providerName)}</span>
+              <div style="display:flex;gap:8px;">
+                <button onclick="copyCurrentConfig('${escapeHtml(providerName)}')" style="background:#0f3460;border:none;color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;">复制</button>
+                <button onclick="pasteCurrentConfig('${escapeHtml(providerName)}')" style="background:#2ecc71;border:none;color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;">粘贴</button>
+                <button onclick="closeModal()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;">&times;</button>
+              </div>
+            </div>
+            <div style="margin-bottom:15px;padding:10px;background:#0f3460;border-radius:4px;">
+              <div style="font-size:12px;color:#94a3b8;">Base URL</div>
+              <div style="font-family:monospace;" id="cfg_base_url"></div>
+            </div>
+            <form onsubmit="saveConfig(event, '${escapeHtml(providerName)}')">
+              <div class="row">
+                <div class="form-group">
+                  <label>请求方法</label>
+                  <select id="cfg_method">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex:3;">
+                  <label>余额查询 URL *</label>
+                  <input type="text" id="cfg_url" placeholder="如: https://api.example.com/balance" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>请求头 (JSON，支持 {api_key} 占位符)</label>
+                <textarea id="cfg_headers"></textarea>
+              </div>
+              <div class="form-group">
+                <label>请求体 (POST 时使用)</label>
+                <textarea id="cfg_body" placeholder='{"key": "value"}'></textarea>
+              </div>
+              <div class="form-group">
+                <label>可用余额路径 (gjson)</label>
+                <input type="text" id="cfg_balance_path" placeholder="如: $.balance">
+              </div>
+              <div class="form-group">
+                <label>已用余额路径 (支持减法: path1-path2)</label>
+                <input type="text" id="cfg_used_balance_path" placeholder="如: $.total-$.used">
+              </div>
+              <div class="row">
+                <div class="form-group">
+                  <label>类型</label>
+                  <select id="cfg_balance_type">
+                    <option value="float">Float</option>
+                    <option value="int">Int</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>余额乘数</label>
+                  <input type="number" id="cfg_balance_multiplier" value="1">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>重置周期路径</label>
+                <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time">
+              </div>
+              <div class="actions">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" class="btn btn-secondary" onclick="testQuery('${escapeHtml(providerName)}')">测试</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">关闭</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      document.getElementById('modal').innerHTML = html;
+      document.getElementById('modal').style.display = 'flex';
+
+      // Set values via JavaScript to avoid HTML attribute parsing issues with special chars
+      document.getElementById('cfg_base_url').textContent = provider?.base_url || 'N/A';
+      document.getElementById('cfg_url').value = config.url || provider?.base_url + '/balance' || '';
+      document.getElementById('cfg_headers').value = config.headers || '{"Authorization": "Bearer {api_key}"}';
+      document.getElementById('cfg_body').value = config.body || '';
+      document.getElementById('cfg_balance_path').value = config.balance_path || '';
+      document.getElementById('cfg_balance_type').value = config.balance_type || 'float';
+      document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier || 1;
+      document.getElementById('cfg_used_balance_path').value = config.used_balance_path || '';
+      document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path || '';
+      if (config.method === 'POST') {
+        document.getElementById('cfg_method').value = 'POST';
+      }
+    }
+
+    async function saveConfig(e, providerName) {
+      e.preventDefault();
+      const config = {
+        name: providerName,
+        enabled: true,
+        method: document.getElementById('cfg_method').value,
+        url: document.getElementById('cfg_url').value,
+        headers: document.getElementById('cfg_headers').value,
+        body: document.getElementById('cfg_body').value,
+        balance_path: document.getElementById('cfg_balance_path').value,
+        balance_type: document.getElementById('cfg_balance_type').value,
+        balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
+        used_balance_path: document.getElementById('cfg_used_balance_path').value,
+        reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
+      };
+
+      try {
+        // Get existing configs
+        const resp = await fetch('/v0/balance/providers');
+        const data = await resp.json();
+        let providers = data.providers || [];
+
+        // Update or add this config
+        const idx = providers.findIndex(p => p.name === providerName);
+        if (idx >= 0) {
+          providers[idx] = config;
+        } else {
+          providers.push(config);
+        }
+
+        // Save
+        const saveResp = await fetch('/v0/balance/providers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providers })
+        });
+
+        if (saveResp.ok) {
+          balanceConfigs[providerName] = config;
+          closeModal();
+          await refreshAll();
+        } else {
+          alert('保存失败');
+        }
+      } catch (e) {
+        alert('保存失败: ' + e.message);
+      }
+    }
+
+    async function testQuery(providerName) {
+      const url = document.getElementById('cfg_url').value;
+      if (!url) {
+        alert('请先填写 URL');
+        return;
+      }
+      try {
+        const resp = await fetch('/v0/balance/query/' + encodeURIComponent(providerName), { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+          alert('查询成功! 余额: ' + data.balance);
+        } else {
+          alert('查询失败: ' + data.error);
+        }
+      } catch (e) {
+        alert('查询失败: ' + e.message);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modal').innerHTML = '';
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    async function refreshAll() {
+      await loadProviders();
+      await loadBalanceConfigs();
+      await queryAllBalances();
+    }
+
+    async function copyCurrentConfig(providerName) {
+      const config = {
+        name: providerName,
+        method: document.getElementById('cfg_method').value,
+        url: document.getElementById('cfg_url').value,
+        headers: document.getElementById('cfg_headers').value,
+        body: document.getElementById('cfg_body').value,
+        balance_path: document.getElementById('cfg_balance_path').value,
+        balance_type: document.getElementById('cfg_balance_type').value,
+        balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
+        used_balance_path: document.getElementById('cfg_used_balance_path').value,
+        reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
+      };
+      const json = JSON.stringify(config, null, 2);
+      await navigator.clipboard.writeText(json);
+      showToast('配置已复制到剪贴板');
+    }
+
+    async function pasteCurrentConfig(providerName) {
+      try {
+        const text = await navigator.clipboard.readText();
+        const config = JSON.parse(text);
+        if (!config) {
+          showToast('剪贴板配置格式错误');
+          return;
+        }
+        // Apply to form fields
+        if (config.method) document.getElementById('cfg_method').value = config.method;
+        if (config.url) document.getElementById('cfg_url').value = config.url;
+        if (config.headers) document.getElementById('cfg_headers').value = config.headers;
+        if (config.body) document.getElementById('cfg_body').value = config.body;
+        if (config.balance_path) document.getElementById('cfg_balance_path').value = config.balance_path;
+        if (config.balance_type) document.getElementById('cfg_balance_type').value = config.balance_type;
+        if (config.balance_multiplier != null) document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier;
+        if (config.used_balance_path) document.getElementById('cfg_used_balance_path').value = config.used_balance_path;
+        if (config.reset_cycle_path) document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path;
+        showToast('配置已从剪贴板粘贴');
+      } catch (e) {
+        if (e.message.includes('JSON')) {
+          showToast('剪贴板内容不是有效的JSON');
+        } else {
+          showToast('粘贴失败: ' + e.message);
+        }
+      }
+    }
+
+    async function saveConfigDirectly(providerName, config) {
+      try {
+        const resp = await fetch('/v0/balance/providers');
+        const data = await resp.json();
+        let providers = data.providers || [];
+        const idx = providers.findIndex(p => p.name === providerName);
+        if (idx >= 0) {
+          providers[idx] = config;
+        } else {
+          providers.push(config);
+        }
+        const saveResp = await fetch('/v0/balance/providers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providers })
+        });
+        if (saveResp.ok) {
+          balanceConfigs[providerName] = config;
+        }
+      } catch (e) {
+        console.error('Save failed:', e);
+      }
+    }
+
+    function formatRemainTime(timestamp) {
+      // Handle ISO date string or Unix timestamp (10 or 13 digits)
+      let endTime;
+      if (isNaN(timestamp)) {
+        // Parse ISO date string like "2026-07-11T15:21:11"
+        endTime = new Date(timestamp).getTime();
+      } else {
+        endTime = parseInt(timestamp);
+        // If 10 digit timestamp (seconds), convert to milliseconds
+        if (endTime < 10000000000) {
+          endTime = endTime * 1000;
+        }
+      }
+      const now = Date.now();
+      let diff = endTime - now;
+
+      // If diff is negative, time has passed
+      if (diff < 0) {
+        return '已过期';
+      }
+
+      const seconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      const m = minutes % 60;
+      const h = hours % 24;
+
+      let result = '';
+      if (days > 0) result += days + '天';
+      if (h > 0) result += h + '小时';
+      if (m > 0) result += m + '分钟';
+
+      return result || '即将重置';
+    }
+
+    function formatNumber(num) {
+      // Format number with appropriate precision - remove trailing zeros
+      if (num == null || isNaN(num)) return '0';
+      // Show up to 8 decimal places, removing trailing zeros
+      return parseFloat(num.toFixed(8)).toString();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    init();
+  </script>
+</body>
+</html>
