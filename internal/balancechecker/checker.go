@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -229,10 +230,25 @@ func (c *Checker) parseUsedBalance(data []byte, usedBalancePath string, multipli
 func normalizePath(path string) string {
 	// Remove leading $. if present
 	path = strings.TrimPrefix(path, "$.")
-	// Convert [n] to .n for gjson compatibility
-	for i := 0; i < 10; i++ {
-		path = strings.Replace(path, "["+string(rune('0'+i))+"]", "."+string(rune('0'+i)), -1)
+	// Convert [n] to .n for gjson compatibility (handles multi-digit numbers)
+	// Match patterns like [0], [1], [10], [123], etc.
+	result := []byte{}
+	for i := 0; i < len(path); i++ {
+		if path[i] == '[' {
+			j := i + 1
+			for j < len(path) && path[j] >= '0' && path[j] <= '9' {
+				j++
+			}
+			if j > i+1 && j < len(path) && path[j] == ']' {
+				result = append(result, '.')
+				result = append(result, path[i+1:j]...)
+				i = j
+				continue
+			}
+		}
+		result = append(result, path[i])
 	}
+	path = string(result)
 	// Fix escaped quotes: \" -> " (order matters - handle single backslash-quote first)
 	path = strings.Replace(path, "\\\"", "\"", -1)
 	path = strings.Replace(path, "\\'", "'", -1)
@@ -311,6 +327,9 @@ func evaluateFormula(data string, tokens []string) (float64, error) {
 
 		if len(trimmed) == 1 && strings.ContainsAny(trimmed, "+-*/=()") {
 			exprStr.WriteString(trimmed)
+		} else if isNumericLiteral(trimmed) {
+			// It's a numeric literal, write directly
+			exprStr.WriteString(trimmed)
 		} else {
 			// Normalize the gjson path (remove $. prefix and convert [n] to .n)
 			normalizedPath := normalizePath(trimmed)
@@ -333,6 +352,15 @@ func evalExpr(expr string) (float64, error) {
 	}
 	x, _, err := parseExpr(expr, 0)
 	return x, err
+}
+
+// isNumericLiteral checks if a string is a numeric literal (int or float)
+func isNumericLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
 }
 
 func parseExpr(s string, pos int) (float64, int, error) {

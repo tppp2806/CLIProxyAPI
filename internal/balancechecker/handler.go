@@ -74,47 +74,65 @@ func (h *Handler) QueryBalance(c *gin.Context) {
 		return
 	}
 
-	cfg := h.configManager.GetConfig()
+	// Check if this is a test request with config in body
+	var testConfig *BalanceProviderConfig
+	if c.Request.ContentLength > 0 {
+		var req struct {
+			Config *BalanceProviderConfig `json:"config"`
+		}
+		if err := c.ShouldBindJSON(&req); err == nil && req.Config != nil {
+			testConfig = req.Config
+		}
+	}
 
 	var provider BalanceProviderConfig
 	var channelAPIKey string
 	var found bool
 
-	// First check balance checker config (custom configs)
-	for _, p := range cfg.Providers {
-		if p.Name == providerName {
-			provider = p
-			// channelAPIKey will be set from OpenAI compatibility config below if empty
-			found = true
-			break
-		}
-	}
+	if testConfig != nil {
+		// Test mode: use the provided config directly
+		provider = *testConfig
+		found = true
+	} else {
+		// Normal mode: look up from config
+		cfg := h.configManager.GetConfig()
 
-	// Also check OpenAI compatibility config to get channel API key
-	h.mu.RLock()
-	if h.config != nil {
-		for _, openai := range h.config.OpenAICompatibility {
-			if openai.Name == providerName {
-				// If balance config didn't set channelAPIKey, try to get from OpenAI compat
-				if channelAPIKey == "" && len(openai.APIKeyEntries) > 0 {
-					channelAPIKey = openai.APIKeyEntries[0].APIKey
-				}
-				// If provider wasn't found in balance checker config, use OpenAI compat settings
-				if !found {
-					provider = BalanceProviderConfig{
-						Name:    openai.Name,
-						Enabled: true,
-						Method:  "GET",
-						URL:     openai.BaseURL + "/balance",
-						Headers: `{"Authorization": "Bearer {api_key}"}`,
-					}
-					found = true
-				}
+		// First check balance checker config (custom configs)
+		for _, p := range cfg.Providers {
+			if p.Name == providerName {
+				provider = p
+				// channelAPIKey will be set from OpenAI compat config below if empty
+				found = true
 				break
 			}
 		}
+
+		// Also check OpenAI compatibility config to get channel API key
+		h.mu.RLock()
+		if h.config != nil {
+			for _, openai := range h.config.OpenAICompatibility {
+				if openai.Name == providerName {
+					// If balance config didn't set channelAPIKey, try to get from OpenAI compat
+					if channelAPIKey == "" && len(openai.APIKeyEntries) > 0 {
+						channelAPIKey = openai.APIKeyEntries[0].APIKey
+					}
+					// If provider wasn't found in balance checker config, use OpenAI compat settings
+					if !found {
+						provider = BalanceProviderConfig{
+							Name:    openai.Name,
+							Enabled: true,
+							Method:  "GET",
+							URL:     openai.BaseURL + "/balance",
+							Headers: `{"Authorization": "Bearer {api_key}"}`,
+						}
+						found = true
+					}
+					break
+				}
+			}
+		}
+		h.mu.RUnlock()
 	}
-	h.mu.RUnlock()
 
 	if !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
