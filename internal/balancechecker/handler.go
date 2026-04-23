@@ -268,11 +268,21 @@ func (h *Handler) GetOpenAIProviders(c *gin.Context) {
 					apiKeys = append(apiKeys, entry.APIKey)
 				}
 			}
+			// Collect model display names (alias if available, otherwise name)
+			models := make([]string, 0)
+			for _, m := range p.Models {
+				if m.Alias != "" {
+					models = append(models, m.Alias)
+				} else {
+					models = append(models, m.Name)
+				}
+			}
 			info := OpenAIProviderInfo{
 				Name:       p.Name,
 				BaseURL:    p.BaseURL,
 				HasAPIKey: len(apiKeys) > 0,
 				APIKeys:    apiKeys,
+				Models:     models,
 			}
 			providers = append(providers, info)
 		}
@@ -287,4 +297,5 @@ type OpenAIProviderInfo struct {
 	BaseURL    string   `json:"base_url"`
 	HasAPIKey  bool     `json:"has_api_key"`
 	APIKeys    []string `json:"api_keys"`
+	Models     []string `json:"models"` // display names (alias if available, otherwise name)
 }

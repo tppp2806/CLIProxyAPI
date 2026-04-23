@@ -15,7 +15,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const defaultTimeout = 30 * time.Second
+const defaultTimeout = 5 * time.Second
 
 // BalanceResult represents the result of a balance query.
 type BalanceResult struct {

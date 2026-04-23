@@ -172,23 +172,29 @@
 
         // If no API keys, show one pending card
         if (apiKeys.length === 0) {
+          const hasBalancePath = balanceConfigs[p.name]?.balance_path;
           html += renderCard({
             provider: p.name,
             groupColor: color,
             apiKeyIndex: 0,
-            success: hasConfig ? null : 'pending',
-            error: hasConfig ? null : '待配置余额查询'
+            success: hasBalancePath ? null : 'pending',
+            error: hasBalancePath ? '查询失败' : '待配置余额查询',
+            balancePath: hasBalancePath,
+            models: p.models
           });
         } else {
           // One card per API key
           for (let i = 0; i < apiKeys.length; i++) {
+            const hasBalancePath = balanceConfigs[p.name]?.balance_path;
             html += renderCard({
               provider: p.name,
               groupColor: color,
               apiKeyIndex: i,
               apiKey: apiKeys[i],
-              success: hasConfig ? null : 'pending',
-              error: hasConfig ? null : '待配置余额查询'
+              success: hasBalancePath ? null : 'pending',
+              error: hasBalancePath ? '查询失败' : '待配置余额查询',
+              balancePath: hasBalancePath,
+              models: p.models
             });
           }
         }
@@ -196,18 +202,36 @@
       html += '</div>';
       content.innerHTML = html;
 
-      // Then query only those with configs
+      // Then query only those with configs (must have url AND balance_path)
       for (let g = 0; g < openaiProviders.length; g++) {
         const p = openaiProviders[g];
-        if (balanceConfigs[p.name] && balanceConfigs[p.name].url) {
+        const cfg = balanceConfigs[p.name];
+        if (cfg && cfg.url && cfg.balance_path) {
           const apiKeys = p.api_keys || [];
           if (apiKeys.length === 0) {
+            updateCardLoading(p.name, 0, true);
             await queryAndUpdateCard(p.name, 0, null);
           } else {
             for (let i = 0; i < apiKeys.length; i++) {
+              updateCardLoading(p.name, i, true);
               await queryAndUpdateCard(p.name, i, apiKeys[i]);
             }
           }
+        }
+      }
+    }
+
+    function updateCardLoading(providerName, apiKeyIndex, isLoading) {
+      const card = document.getElementById('card-' + providerName + '_' + apiKeyIndex);
+      if (card) {
+        const balanceEl = card.querySelector('.balance');
+        if (balanceEl) {
+          balanceEl.textContent = isLoading ? '查询中...' : '查询失败';
+          balanceEl.style.color = isLoading ? '#f39c12' : '#e74c3c';
+        }
+        const infoEl = card.querySelector('.info');
+        if (infoEl) {
+          infoEl.textContent = isLoading ? '请稍候' : '点击查看错误信息';
         }
       }
     }
@@ -220,20 +244,22 @@
       if (r.apiKey != null) {
         onclickAttr += ', ' + r.apiKeyIndex;
       }
-      let html = '<div class="result-card ' + cardClass + '" id="card-' + cardId + '" data-color="' + color + '" style="border-color:' + color + ';border-left-color:' + color + ';" onclick="' + onclickAttr + '">';
-      html += '<div class="name" style="color:' + color + ';">' + escapeHtml(r.provider);
-      if (r.apiKey) {
-        html += ' <span style="color:#64748b;font-size:10px;">#' + (r.apiKeyIndex + 1) + '</span>';
-      }
-      html += '</div>';
-      if (r.apiKey) {
-        html += '<div class="api-key">' + escapeHtml(r.apiKey.substring(0, 8)) + '...' + '</div>';
-      }
+      let html = '<div class="result-card ' + cardClass + '" id="card-' + cardId + '" data-color="' + color + '" style="border-color:' + color + ';border-left-color:' + color + ';display:flex;" onclick="' + onclickAttr + '">';
+      // Left column: provider name and balance
+      html += '<div style="flex:1;display:flex;flex-direction:column;">';
+      html += '<div class="name" style="color:' + color + ';font-size:14px;margin-bottom:0;">' + escapeHtml(r.provider) + '</div>';
       if (cardClass === 'pending') {
-        html += '<div class="balance">待配置</div>';
-        html += '<div class="info">点击配置余额查询</div>';
+        if (r.isLoading) {
+          html += '<div class="balance" style="color:#f39c12;">查询中...</div>';
+          html += '<div class="info">请稍候</div>';
+        } else if (r.balancePath === false) {
+          html += '<div class="balance">未配置</div>';
+          html += '<div class="info">点击配置余额查询</div>';
+        } else {
+          html += '<div class="balance" style="color:#94a3b8;">待查询</div>';
+          html += '<div class="info">点击查看或刷新</div>';
+        }
       } else if (r.success) {
-        // balance = 可用余额, used_balance = 已用余额
         html += '<div class="balance" style="color:' + color + '">' + (r.balance != null ? formatNumber(r.balance) : 'N/A') + '</div>';
         if (r.used_balance > 0) {
           html += '<div class="info">已用: ' + formatNumber(r.used_balance) + '</div>';
@@ -241,7 +267,6 @@
         if (r.reset_cycle) {
           html += '<div class="info">重置: ' + formatRemainTime(r.reset_cycle) + '</div>';
         }
-        // Progress bar: used / (balance + used)
         if (r.balance > 0 || r.used_balance > 0) {
           const total = r.balance + r.used_balance;
           const usedPercent = total > 0 ? (r.used_balance / total * 100) : 0;
@@ -253,6 +278,21 @@
         html += '<div class="balance">查询失败</div>';
         html += '<div class="error-msg">' + escapeHtml(r.error || '未知错误') + '</div>';
       }
+      html += '</div>';
+      // Right column: api key and models
+      html += '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:0;">';
+      if (r.apiKey) {
+        const len = r.apiKey.length;
+        if (len > 4) {
+          html += '<span style="color:#64748b;font-size:10px;font-family:monospace;white-space:nowrap;">' + escapeHtml(r.apiKey.substring(0, 2)) + '...' + escapeHtml(r.apiKey.substring(len - 2)) + ' #' + (r.apiKeyIndex + 1) + '</span>';
+        }
+      }
+      if (r.models && r.models.length > 0) {
+        r.models.forEach((m, idx) => {
+          html += '<span class="model-tag" onclick="event.stopPropagation();copyModel(\'' + escapeHtml(m) + '\')" style="display:inline-block;background:#0f3460;color:' + color + ';padding:1px 6px;border-radius:3px;font-size:10px;margin:1px;cursor:pointer;border:1px solid ' + color + '40;white-space:nowrap;">' + escapeHtml(m) + '</span>';
+        });
+      }
+      html += '</div>';
       html += '</div>';
       return html;
     }
@@ -272,6 +312,8 @@
         const card = document.getElementById('card-' + cardId);
         if (card) {
           const groupColor = card.getAttribute('data-color');
+          const provider = openaiProviders.find(p => p.name === providerName);
+          const models = provider?.models || [];
           card.outerHTML = renderCard({
             provider: providerName,
             groupColor: groupColor,
@@ -281,7 +323,8 @@
             balance: data.balance,
             used_balance: data.used_balance,
             reset_cycle: data.reset_cycle,
-            error: data.error
+            error: data.error,
+            models: models
           });
         }
       } catch (e) {
@@ -326,11 +369,20 @@
               </div>
               <div class="form-group">
                 <label>请求头 (JSON，支持 {api_key} 占位符)</label>
-                <textarea id="cfg_headers"></textarea>
+                <button type="button" class="btn btn-secondary" id="btn-edit-mode" onclick="toggleEditMode()" style="margin-bottom:8px;">切换到键-值模式</button>
+                <div id="headers-kv" style="display:none;">
+                  <div id="headers-kv-list" style="background:#0f3460;border-radius:4px;padding:8px;margin-bottom:8px;"></div>
+                  <button type="button" class="btn btn-secondary" onclick="addHeaderRow()" style="font-size:11px;padding:4px 8px;">+ 添加请求头</button>
+                </div>
+                <textarea id="cfg_headers_text" placeholder='{"Authorization": "Bearer {api_key}"}'></textarea>
               </div>
               <div class="form-group">
                 <label>请求体 (POST 时使用)</label>
-                <textarea id="cfg_body" placeholder='{"key": "value"}'></textarea>
+                <div id="body-kv" style="display:none;">
+                  <div id="body-kv-list" style="background:#0f3460;border-radius:4px;padding:8px;margin-bottom:8px;"></div>
+                  <button type="button" class="btn btn-secondary" onclick="addBodyRow()" style="font-size:11px;padding:4px 8px;">+ 添加字段</button>
+                </div>
+                <textarea id="cfg_body_text" placeholder='{"key": "value"}'></textarea>
               </div>
               <div class="form-group">
                 <label>可用余额路径 (gjson)</label>
@@ -355,7 +407,7 @@
               </div>
               <div class="form-group">
                 <label>重置周期路径</label>
-                <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time">
+                <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time，设为 -1 表示无限期">
               </div>
               <div class="actions">
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -372,8 +424,8 @@
       // Set values via JavaScript to avoid HTML attribute parsing issues with special chars
       document.getElementById('cfg_base_url').textContent = provider?.base_url || 'N/A';
       document.getElementById('cfg_url').value = config.url || provider?.base_url + '/balance' || '';
-      document.getElementById('cfg_headers').value = config.headers || '{"Authorization": "Bearer {api_key}"}';
-      document.getElementById('cfg_body').value = config.body || '';
+      document.getElementById('cfg_headers_text').value = config.headers || '{"Authorization": "Bearer {api_key}"}';
+      document.getElementById('cfg_body_text').value = config.body || '';
       document.getElementById('cfg_balance_path').value = config.balance_path || '';
       document.getElementById('cfg_balance_type').value = config.balance_type || 'float';
       document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier || 1;
@@ -382,17 +434,26 @@
       if (config.method === 'POST') {
         document.getElementById('cfg_method').value = 'POST';
       }
+      // Init mode buttons style
+      document.getElementById('btn-headers-json').style.background = '#0f3460';
+      document.getElementById('btn-headers-text').style.background = '#00d9ff';
+      document.getElementById('btn-body-kv').style.background = '#0f3460';
+      document.getElementById('btn-body-text').style.background = '#00d9ff';
     }
 
     async function saveConfig(e, providerName) {
       e.preventDefault();
+      if (editMode === 'kv') {
+        syncHeadersToText();
+        syncBodyToText();
+      }
       const config = {
         name: providerName,
         enabled: true,
         method: document.getElementById('cfg_method').value,
         url: document.getElementById('cfg_url').value,
-        headers: document.getElementById('cfg_headers').value,
-        body: document.getElementById('cfg_body').value,
+        headers: document.getElementById('cfg_headers_text').value,
+        body: document.getElementById('cfg_body_text').value,
         balance_path: document.getElementById('cfg_balance_path').value,
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
@@ -447,8 +508,8 @@
         enabled: true,
         method: document.getElementById('cfg_method').value,
         url: url,
-        headers: document.getElementById('cfg_headers').value,
-        body: document.getElementById('cfg_body').value,
+        headers: document.getElementById('cfg_headers_text').value,
+        body: document.getElementById('cfg_body_text').value,
         balance_path: document.getElementById('cfg_balance_path').value,
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
@@ -456,6 +517,14 @@
         reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
       };
       try {
+        const testBtn = document.querySelector('button[onclick^="testQuery"]');
+        const originalText = testBtn.textContent;
+        testBtn.textContent = '查询中...';
+        testBtn.disabled = true;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) {
           headers['X-API-Key'] = apiKey;
@@ -463,8 +532,12 @@
         const resp = await fetch('/v0/balance/query/' + encodeURIComponent(providerName), {
           method: 'POST',
           headers: headers,
-          body: JSON.stringify({ config: config })
+          body: JSON.stringify({ config: config }),
+          signal: controller.signal
         });
+        clearTimeout(timeout);
+        testBtn.textContent = originalText;
+        testBtn.disabled = false;
         const data = await resp.json();
         if (data.success) {
           alert('查询成功! 余额: ' + data.balance);
@@ -472,6 +545,8 @@
           alert('查询失败: ' + data.error);
         }
       } catch (e) {
+        testBtn.textContent = originalText;
+        testBtn.disabled = false;
         alert('查询失败: ' + e.message);
       }
     }
@@ -487,6 +562,103 @@
       setTimeout(() => toast.classList.remove('show'), 2000);
     }
 
+    async function copyModel(modelName) {
+      await navigator.clipboard.writeText(modelName);
+      showToast('已复制: ' + modelName);
+    }
+
+    let editMode = 'text';
+    let headerRows = [];
+    let bodyRows = [];
+
+    function toggleEditMode() {
+      editMode = editMode === 'text' ? 'kv' : 'text';
+      const btn = document.getElementById('btn-edit-mode');
+      btn.textContent = editMode === 'kv' ? '切换到文本模式' : '切换到键-值模式';
+      btn.style.background = editMode === 'kv' ? '#00d9ff' : '#0f3460';
+
+      document.getElementById('headers-kv').style.display = editMode === 'kv' ? 'block' : 'none';
+      document.getElementById('cfg_headers_text').style.display = editMode === 'text' ? 'block' : 'none';
+      document.getElementById('body-kv').style.display = editMode === 'kv' ? 'block' : 'none';
+      document.getElementById('cfg_body_text').style.display = editMode === 'text' ? 'block' : 'none';
+
+      if (editMode === 'kv') {
+        syncHeadersFromText();
+        syncBodyFromText();
+      } else {
+        syncHeadersToText();
+        syncBodyToText();
+      }
+    }
+
+    function syncHeadersFromText() {
+      const text = document.getElementById('cfg_headers_text').value;
+      headerRows = [];
+      try {
+        const obj = JSON.parse(text);
+        for (const [k, v] of Object.entries(obj)) {
+          headerRows.push({ key: k, value: v });
+        }
+      } catch (e) {}
+      renderHeaderRows();
+    }
+
+    function syncHeadersToText() {
+      const obj = {};
+      headerRows.forEach(r => { if (r.key) obj[r.key] = r.value; });
+      document.getElementById('cfg_headers_text').value = JSON.stringify(obj);
+    }
+
+    function renderHeaderRows() {
+      const list = document.getElementById('headers-kv-list');
+      if (headerRows.length === 0) {
+        list.innerHTML = '';
+        list.style.display = 'none';
+        return;
+      }
+      list.style.display = 'block';
+      list.innerHTML = headerRows.map((r, i) => '<div style="display:flex;gap:8px;margin-bottom:6px;"><input placeholder="key" value="' + escapeHtml(r.key) + '" onchange="headerRows[' + i + '].key=this.value" style="flex:1;padding:4px;background:#16213e;border:1px solid #1e3a5f;color:#fff;border-radius:4px;font-size:12px;"><input placeholder="value" value="' + escapeHtml(r.value) + '" onchange="headerRows[' + i + '].value=this.value" style="flex:2;padding:4px;background:#16213e;border:1px solid #1e3a5f;color:#fff;border-radius:4px;font-size:12px;"><button onclick="headerRows.splice(' + i + ',1);renderHeaderRows()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:16px;padding:4px;">×</button></div>').join('');
+    }
+
+    function addHeaderRow() {
+      headerRows.push({ key: '', value: '' });
+      renderHeaderRows();
+    }
+
+    function syncBodyFromText() {
+      const text = document.getElementById('cfg_body_text').value;
+      bodyRows = [];
+      try {
+        const obj = JSON.parse(text);
+        for (const [k, v] of Object.entries(obj)) {
+          bodyRows.push({ key: k, value: typeof v === 'object' ? JSON.stringify(v) : String(v) });
+        }
+      } catch (e) {}
+      renderBodyRows();
+    }
+
+    function syncBodyToText() {
+      const obj = {};
+      bodyRows.forEach(r => { if (r.key) { try { obj[r.key] = JSON.parse(r.value); } catch (e) { obj[r.key] = r.value; } } });
+      document.getElementById('cfg_body_text').value = JSON.stringify(obj);
+    }
+
+    function renderBodyRows() {
+      const list = document.getElementById('body-kv-list');
+      if (bodyRows.length === 0) {
+        list.innerHTML = '';
+        list.style.display = 'none';
+        return;
+      }
+      list.style.display = 'block';
+      list.innerHTML = bodyRows.map((r, i) => '<div style="display:flex;gap:8px;margin-bottom:6px;"><input placeholder="key" value="' + escapeHtml(r.key) + '" onchange="bodyRows[' + i + '].key=this.value" style="flex:1;padding:4px;background:#16213e;border:1px solid #1e3a5f;color:#fff;border-radius:4px;font-size:12px;"><input placeholder="value" value="' + escapeHtml(r.value) + '" onchange="bodyRows[' + i + '].value=this.value" style="flex:2;padding:4px;background:#16213e;border:1px solid #1e3a5f;color:#fff;border-radius:4px;font-size:12px;"><button onclick="bodyRows.splice(' + i + ',1);renderBodyRows()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:16px;padding:4px;">×</button></div>').join('');
+    }
+
+    function addBodyRow() {
+      bodyRows.push({ key: '', value: '' });
+      renderBodyRows();
+    }
+
     async function refreshAll() {
       await loadProviders();
       await loadBalanceConfigs();
@@ -498,8 +670,8 @@
         name: providerName,
         method: document.getElementById('cfg_method').value,
         url: document.getElementById('cfg_url').value,
-        headers: document.getElementById('cfg_headers').value,
-        body: document.getElementById('cfg_body').value,
+        headers: document.getElementById('cfg_headers_text').value,
+        body: document.getElementById('cfg_body_text').value,
         balance_path: document.getElementById('cfg_balance_path').value,
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
@@ -564,6 +736,10 @@
     }
 
     function formatRemainTime(timestamp) {
+      // -1 means unlimited
+      if (timestamp === -1 || timestamp === '-1') {
+        return '无限期';
+      }
       // Handle ISO date string or Unix timestamp (10 or 13 digits)
       let endTime;
       if (isNaN(timestamp)) {

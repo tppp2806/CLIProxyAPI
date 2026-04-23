@@ -31,3 +31,27 @@ providers:
       used_balance_path: rows.#(tokenNo%\"bundle_848\").tokensMagnitude-rows.#(tokenNo%\"bundle_848\").tokenBalance
       reset_cycle_path: rows.#(tokenNo%\"bundle_848\").expirationTime
       enable_proxy: false
+    - name: DMXAPI
+      enabled: true
+      method: GET
+      url: "22"
+      headers: '{"Authorization": "Bearer {api_key}"}'
+      body: ""
+      balance_path: ""
+      balance_type: float
+      balance_multiplier: 1
+      used_balance_path: ""
+      reset_cycle_path: "-1"
+      enable_proxy: false
+    - name: lucen.cc
+      enabled: true
+      method: GET
+      url: https://lucen.cc/api/v1/auth/me?timezone=Asia%2FShanghai
+      headers: '{"authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo4MTkyLCJlbWFpbCI6IjI4MDYyODQ4MjlAcXEuY29tIiwicm9sZSI6InVzZXIiLCJ0b2tlbl92ZXJzaW9uIjowLCJleHAiOjE3NzcwNDIyODksIm5iZiI6MTc3Njk1NTg4OSwiaWF0IjoxNzc2OTU1ODg5fQ.UrqyXvxLatTXUm1EADnyGY3QNoNK5RbF4z_Cv1FW1WU"}'
+      body: '{}'
+      balance_path: $.data.balance
+      balance_type: float
+      balance_multiplier: 0.4
+      used_balance_path: ""
+      reset_cycle_path: "-1"
+      enable_proxy: false
