@@ -47,11 +47,23 @@ providers:
       enabled: true
       method: GET
       url: https://lucen.cc/api/v1/auth/me?timezone=Asia%2FShanghai
-      headers: '{"authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo4MTkyLCJlbWFpbCI6IjI4MDYyODQ4MjlAcXEuY29tIiwicm9sZSI6InVzZXIiLCJ0b2tlbl92ZXJzaW9uIjowLCJleHAiOjE3NzcwNDIyODksIm5iZiI6MTc3Njk1NTg4OSwiaWF0IjoxNzc2OTU1ODg5fQ.UrqyXvxLatTXUm1EADnyGY3QNoNK5RbF4z_Cv1FW1WU"}'
+      headers: '{"authorization":" Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo4MTkyLCJlbWFpbCI6IjI4MDYyODQ4MjlAcXEuY29tIiwicm9sZSI6InVzZXIiLCJ0b2tlbl92ZXJzaW9uIjo0NDM1ODMxMTY1MzA3MTMyODk2LCJleHAiOjE3NzcwOTAzMDYsIm5iZiI6MTc3NzAwMzkwNiwiaWF0IjoxNzc3MDAzOTA2fQ.xCrnkFLc6C5wfqqxCVB-T9sqQ53GDJvDYg8pv8tYqOQ"}'
       body: '{}'
       balance_path: $.data.balance
       balance_type: float
       balance_multiplier: 0.4
       used_balance_path: ""
       reset_cycle_path: "-1"
+      enable_proxy: false
+    - name: api.ciciapi.com
+      enabled: true
+      method: GET
+      url: https://api.ciciapi.com/api/user/self
+      headers: '{"accept":"application/json","new-api-user":"1003","cookie":" session=MTc3NzE5MDc4MHxEWDhFQVFMX2dBQUJFQUVRQUFEX2tfLUFBQVVHYzNSeWFXNW5EQVFBQW1sa0EybHVkQVFFQVA0SDFnWnpkSEpwYm1jTUNnQUlkWE5sY201aGJXVUdjM1J5YVc1bkRBb0FDSFJ3Y0hBeU9EQTJCbk4wY21sdVp3d0dBQVJ5YjJ4bEEybHVkQVFDQUFJR2MzUnlhVzVuREFnQUJuTjBZWFIxY3dOcGJuUUVBZ0FDQm5OMGNtbHVad3dIQUFWbmNtOTFjQVp6ZEhKcGJtY01DUUFIWkdWbVlYVnNkQT09fGG1yfMO7OD0iWVQWJYsGhIYA9RiS9cfdISoDMhahI87"}'
+      body: '{}'
+      balance_path: $.data.quota
+      balance_type: float
+      balance_multiplier: 2e-06
+      used_balance_path: $.data.used_quota
+      reset_cycle_path: $.model_remains[0].end_time
       enable_proxy: false

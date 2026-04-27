@@ -434,11 +434,9 @@
       if (config.method === 'POST') {
         document.getElementById('cfg_method').value = 'POST';
       }
-      // Init mode buttons style
-      document.getElementById('btn-headers-json').style.background = '#0f3460';
-      document.getElementById('btn-headers-text').style.background = '#00d9ff';
-      document.getElementById('btn-body-kv').style.background = '#0f3460';
-      document.getElementById('btn-body-text').style.background = '#00d9ff';
+
+      // Initialize edit mode state properly
+      toggleEditMode('kv');
     }
 
     async function saveConfig(e, providerName) {
@@ -495,6 +493,11 @@
     }
 
     async function testQuery(providerName, apiKeyIndex) {
+      if (editMode === 'kv') {
+        syncHeadersToText();
+        syncBodyToText();
+      }
+
       const url = document.getElementById('cfg_url').value;
       if (!url) {
         alert('请先填写 URL');
@@ -567,29 +570,33 @@
       showToast('已复制: ' + modelName);
     }
 
-    let editMode = 'text';
-    let headerRows = [];
-    let bodyRows = [];
+      let editMode = 'kv';
+      let headerRows = [];
+      let bodyRows = [];
 
-    function toggleEditMode() {
-      editMode = editMode === 'text' ? 'kv' : 'text';
-      const btn = document.getElementById('btn-edit-mode');
-      btn.textContent = editMode === 'kv' ? '切换到文本模式' : '切换到键-值模式';
-      btn.style.background = editMode === 'kv' ? '#00d9ff' : '#0f3460';
+      function toggleEditMode(forceMode) {
+        if (forceMode) {
+          editMode = forceMode;
+        } else {
+          editMode = editMode === 'text' ? 'kv' : 'text';
+        }
+        const btn = document.getElementById('btn-edit-mode');
+        btn.textContent = editMode === 'kv' ? '切换到文本模式' : '切换到键-值模式';
+        btn.style.background = editMode === 'kv' ? '#00d9ff' : '#0f3460';
 
-      document.getElementById('headers-kv').style.display = editMode === 'kv' ? 'block' : 'none';
-      document.getElementById('cfg_headers_text').style.display = editMode === 'text' ? 'block' : 'none';
-      document.getElementById('body-kv').style.display = editMode === 'kv' ? 'block' : 'none';
-      document.getElementById('cfg_body_text').style.display = editMode === 'text' ? 'block' : 'none';
+        document.getElementById('headers-kv').style.display = editMode === 'kv' ? 'block' : 'none';
+        document.getElementById('cfg_headers_text').style.display = editMode === 'text' ? 'block' : 'none';
+        document.getElementById('body-kv').style.display = editMode === 'kv' ? 'block' : 'none';
+        document.getElementById('cfg_body_text').style.display = editMode === 'text' ? 'block' : 'none';
 
-      if (editMode === 'kv') {
-        syncHeadersFromText();
-        syncBodyFromText();
-      } else {
-        syncHeadersToText();
-        syncBodyToText();
+        if (editMode === 'kv') {
+          syncHeadersFromText();
+          syncBodyFromText();
+        } else {
+          syncHeadersToText();
+          syncBodyToText();
+        }
       }
-    }
 
     function syncHeadersFromText() {
       const text = document.getElementById('cfg_headers_text').value;
@@ -694,8 +701,14 @@
         // Apply to form fields
         if (config.method) document.getElementById('cfg_method').value = config.method;
         if (config.url) document.getElementById('cfg_url').value = config.url;
-        if (config.headers) document.getElementById('cfg_headers').value = config.headers;
-        if (config.body) document.getElementById('cfg_body').value = config.body;
+        if (config.headers) {
+          document.getElementById('cfg_headers_text').value = config.headers;
+          if (editMode === 'kv') syncHeadersFromText();
+        }
+        if (config.body) {
+          document.getElementById('cfg_body_text').value = config.body;
+          if (editMode === 'kv') syncBodyFromText();
+        }
         if (config.balance_path) document.getElementById('cfg_balance_path').value = config.balance_path;
         if (config.balance_type) document.getElementById('cfg_balance_type').value = config.balance_type;
         if (config.balance_multiplier != null) document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier;
