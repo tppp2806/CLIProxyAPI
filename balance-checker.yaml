@@ -49,7 +49,7 @@ providers:
       url: https://lucen.cc/api/v1/auth/me?timezone=Asia%2FShanghai
       headers: '{"authorization":" Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo4MTkyLCJlbWFpbCI6IjI4MDYyODQ4MjlAcXEuY29tIiwicm9sZSI6InVzZXIiLCJ0b2tlbl92ZXJzaW9uIjo0NDM1ODMxMTY1MzA3MTMyODk2LCJleHAiOjE3NzcwOTAzMDYsIm5iZiI6MTc3NzAwMzkwNiwiaWF0IjoxNzc3MDAzOTA2fQ.xCrnkFLc6C5wfqqxCVB-T9sqQ53GDJvDYg8pv8tYqOQ"}'
       body: '{}'
-      balance_path: $.data.balance
+      balance_path: ""
       balance_type: float
       balance_multiplier: 0.4
       used_balance_path: ""
@@ -65,5 +65,29 @@ providers:
       balance_type: float
       balance_multiplier: 2e-06
       used_balance_path: $.data.used_quota
-      reset_cycle_path: $.model_remains[0].end_time
+      reset_cycle_path: "-1"
+      enable_proxy: false
+    - name: KIMI官方
+      enabled: true
+      method: GET
+      url: https://api.moonshot.cn/v1/users/me
+      headers: '{"content-type":" application/json","authorization":" Bearer {api_key}"}'
+      body: '{}'
+      balance_path: data.organization.max_token_per_day-data.organization_usage.cur_token_per_day
+      balance_type: float
+      balance_multiplier: 1e-06
+      used_balance_path: data.organization_usage.cur_token_per_day
+      reset_cycle_path: '{cycle:24}'
+      enable_proxy: false
+    - name: MIMO官方
+      enabled: true
+      method: GET
+      url: https://platform.xiaomimimo.com/api/v1/tokenPlan/usage
+      headers: '{"content-type":" application/json","authorization":" Bearer {api_key}","cookie":"serviceToken=\"/Qzv9hyEQZikhu2h7j2kvCqkqqZUUyVkObLAJhgnLVwQ6XXc3IR3VFLeSnLi5NaL6tWD/7fgCzc+ZstnTGfF8HRNkJuvocCgUhwxBoJV6TX/kX2/dYd9/dG1gKzv2t38m+iRWgojNOOyhlWZbqVuf8M3SovTPAg4UCqqcHy4E5pHbefovpHSKvMj0w/+amn7GaGI4rECIeQdhK1b2Vmp+X9zvlggUr8QfJxXXUqQf3NLldmFgTKVWZeRncbolFHB4il/QqjuDjY+8tXjv3rNO2YbDqqglE2pM0Ef2BYZEw7UpdFc+ZxRh4AqUsoXsLmViJ5Bm9iTNAdSe7rGcMW0+H0HCJhOJRmYfOjyEl9RmcE=\"; xiaomichatbot_ph=\"kPA4ACtcB5V3KdQASTN78Q==\"; api-platform_serviceToken=\"0aGv1vYTmkWagPXGHaEicObVQn9xGP1Ia31WVG7qDUMnIZWIMesro9Q04DrGWLkLFD/udPp6YgCfjE+dhi34H7gTNW8ZdHfMsLvqzyh7niaTp008arkwaFVIxCOQ5iVzvhm/5tEhjS+q41Q8E9GPk/qb1VvXjfyXkEMPC3BbekHwmHTOrMiqblTs6skHYpYLgefMzrJdyuhnW9+gecV3/3Il4baCmOpmZEaWxHZVA3YzSV0YV0JHRRmZ+P/3PyhlDaYf4lpqKPEBBDZOnX6OmXbIFJJCR76xSo2QPTau+yV8BhTm6Kt/5d6/+HRscqbw2zW+LSUuu0X4ljI6r8B9X3kb9t/G+hLoM8AN8dQsLTs=\"; userId=3206252558; api-platform_slh=\"1cW9s3PgVI5e36oWl9xzi+zIUPc=\"; api-platform_ph=\"a5vFUykaesATNJWoU1J0Qw==\""}'
+      body: '{}'
+      balance_path: data.usage.items[0].limit-data.usage.items[0].used
+      balance_type: float
+      balance_multiplier: 1e-06
+      used_balance_path: data.usage.items[0].used
+      reset_cycle_path: '{cycle:24}'
       enable_proxy: false

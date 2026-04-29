@@ -15,6 +15,22 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// calculateNextCycleTimestamp returns the next cycle boundary timestamp based on the given hour interval.
+// For example, if hours=5 and current time is 3:30, it returns 5:00 today.
+// If current time is 22:00 and hours=5, it returns 0:00 tomorrow.
+func calculateNextCycleTimestamp(hours int) string {
+	now := time.Now()
+	currentHour := now.Hour()
+	nextBoundary := ((currentHour / hours) + 1) * hours
+	var nextTime time.Time
+	if nextBoundary >= 24 {
+		nextTime = time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+	} else {
+		nextTime = time.Date(now.Year(), now.Month(), now.Day(), nextBoundary, 0, 0, 0, now.Location())
+	}
+	return fmt.Sprintf("%d", nextTime.Unix())
+}
+
 const defaultTimeout = 5 * time.Second
 
 // BalanceResult represents the result of a balance query.
@@ -130,6 +146,13 @@ func (c *Checker) QueryBalance(provider BalanceProviderConfig, apiKey string) Ba
 		// Special case: {current_time} returns current timestamp in seconds (10 digit)
 		if provider.ResetCyclePath == "{current_time}" {
 			result.ResetCycle = fmt.Sprintf("%d", time.Now().Unix())
+		} else if strings.HasPrefix(provider.ResetCyclePath, "{cycle:") && strings.HasSuffix(provider.ResetCyclePath, "}") {
+			// Cycle hours mode: {cycle:24} means next 24-hour boundary
+			hoursStr := strings.TrimPrefix(strings.TrimSuffix(provider.ResetCyclePath, "}"), "{cycle:")
+			hours, err := strconv.Atoi(hoursStr)
+			if err == nil && hours > 0 {
+				result.ResetCycle = calculateNextCycleTimestamp(hours)
+			}
 		} else {
 			// Check if it's a formula (contains operators)
 			tokens := splitFormulaTokens(provider.ResetCyclePath)

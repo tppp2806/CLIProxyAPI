@@ -202,7 +202,8 @@
       html += '</div>';
       content.innerHTML = html;
 
-      // Then query only those with configs (must have url AND balance_path)
+      // Then query only those with configs (must have url AND balance_path) - all concurrent
+      const queries = [];
       for (let g = 0; g < openaiProviders.length; g++) {
         const p = openaiProviders[g];
         const cfg = balanceConfigs[p.name];
@@ -210,15 +211,16 @@
           const apiKeys = p.api_keys || [];
           if (apiKeys.length === 0) {
             updateCardLoading(p.name, 0, true);
-            await queryAndUpdateCard(p.name, 0, null);
+            queries.push(queryAndUpdateCard(p.name, 0, null));
           } else {
             for (let i = 0; i < apiKeys.length; i++) {
               updateCardLoading(p.name, i, true);
-              await queryAndUpdateCard(p.name, i, apiKeys[i]);
+              queries.push(queryAndUpdateCard(p.name, i, apiKeys[i]));
             }
           }
         }
       }
+      await Promise.all(queries);
     }
 
     function updateCardLoading(providerName, apiKeyIndex, isLoading) {
@@ -402,12 +404,26 @@
                 </div>
                 <div class="form-group">
                   <label>余额乘数</label>
-                  <input type="number" id="cfg_balance_multiplier" value="1" step="0.0000000001">
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <select id="cfg_multiplier_mode" onchange="onMultiplierModeChange()" style="width:90px;flex-shrink:0;">
+                      <option value="custom">自定义</option>
+                      <option value="k">/K</option>
+                      <option value="m">/M</option>
+                    </select>
+                    <input type="number" id="cfg_balance_multiplier" value="1" step="0.0000000001" style="flex:1;">
+                  </div>
                 </div>
               </div>
               <div class="form-group">
-                <label>重置周期路径</label>
-                <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time，设为 -1 表示无限期">
+                <label>重置周期</label>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <select id="cfg_reset_mode" onchange="onResetModeChange()" style="width:90px;flex-shrink:0;">
+                    <option value="custom">自定义</option>
+                    <option value="cycle_hours">每x小时</option>
+                  </select>
+                  <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time" style="flex:1;">
+                  <input type="number" id="cfg_cycle_hours" placeholder="小时数，如 24" style="flex:1;display:none;">
+                </div>
               </div>
               <div class="actions">
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -430,10 +446,25 @@
       document.getElementById('cfg_balance_type').value = config.balance_type || 'float';
       document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier || 1;
       document.getElementById('cfg_used_balance_path').value = config.used_balance_path || '';
-      document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path || '';
       if (config.method === 'POST') {
         document.getElementById('cfg_method').value = 'POST';
       }
+
+      // Initialize multiplier mode
+      const multMode = (config.balance_multiplier === 0.001) ? 'k' : (config.balance_multiplier === 0.000001) ? 'm' : 'custom';
+      document.getElementById('cfg_multiplier_mode').value = multMode;
+      onMultiplierModeChange();
+
+      // Initialize reset mode
+      if (config.reset_cycle_path && config.reset_cycle_path.startsWith('{cycle:') && config.reset_cycle_path.endsWith('}')) {
+        document.getElementById('cfg_reset_mode').value = 'cycle_hours';
+        const hours = config.reset_cycle_path.replace('{cycle:', '').replace('}', '');
+        document.getElementById('cfg_cycle_hours').value = hours;
+      } else {
+        document.getElementById('cfg_reset_mode').value = 'custom';
+        document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path || '';
+      }
+      onResetModeChange();
 
       // Initialize edit mode state properly
       toggleEditMode('kv');
@@ -445,18 +476,27 @@
         syncHeadersToText();
         syncBodyToText();
       }
+      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
+      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
+        const hours = document.getElementById('cfg_cycle_hours').value;
+        if (hours && parseInt(hours) > 0) {
+          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
+        } else {
+          resetCyclePath = '';
+        }
+      }
       const config = {
         name: providerName,
         enabled: true,
         method: document.getElementById('cfg_method').value,
-        url: document.getElementById('cfg_url').value,
+        url: document.getElementById('cfg_url').value.trim(),
         headers: document.getElementById('cfg_headers_text').value,
         body: document.getElementById('cfg_body_text').value,
         balance_path: document.getElementById('cfg_balance_path').value,
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
+        reset_cycle_path: resetCyclePath
       };
 
       try {
@@ -498,10 +538,19 @@
         syncBodyToText();
       }
 
-      const url = document.getElementById('cfg_url').value;
+      const url = document.getElementById('cfg_url').value.trim();
       if (!url) {
         alert('请先填写 URL');
         return;
+      }
+      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
+      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
+        const hours = document.getElementById('cfg_cycle_hours').value;
+        if (hours && parseInt(hours) > 0) {
+          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
+        } else {
+          resetCyclePath = '';
+        }
       }
       const provider = openaiProviders.find(p => p.name === providerName);
       const apiKeys = provider?.api_keys || [];
@@ -517,7 +566,7 @@
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
+        reset_cycle_path: resetCyclePath
       };
       try {
         const testBtn = document.querySelector('button[onclick^="testQuery"]');
@@ -574,6 +623,36 @@
       let headerRows = [];
       let bodyRows = [];
 
+      function onMultiplierModeChange() {
+        const mode = document.getElementById('cfg_multiplier_mode').value;
+        const input = document.getElementById('cfg_balance_multiplier');
+        if (mode === 'k') {
+          input.value = 0.001;
+          input.disabled = true;
+          input.style.opacity = '0.6';
+        } else if (mode === 'm') {
+          input.value = 0.000001;
+          input.disabled = true;
+          input.style.opacity = '0.6';
+        } else {
+          input.disabled = false;
+          input.style.opacity = '1';
+        }
+      }
+
+      function onResetModeChange() {
+        const mode = document.getElementById('cfg_reset_mode').value;
+        const pathInput = document.getElementById('cfg_reset_cycle_path');
+        const hoursInput = document.getElementById('cfg_cycle_hours');
+        if (mode === 'cycle_hours') {
+          pathInput.style.display = 'none';
+          hoursInput.style.display = 'block';
+        } else {
+          pathInput.style.display = 'block';
+          hoursInput.style.display = 'none';
+        }
+      }
+
       function toggleEditMode(forceMode) {
         if (forceMode) {
           editMode = forceMode;
@@ -584,10 +663,14 @@
         btn.textContent = editMode === 'kv' ? '切换到文本模式' : '切换到键-值模式';
         btn.style.background = editMode === 'kv' ? '#00d9ff' : '#0f3460';
 
-        document.getElementById('headers-kv').style.display = editMode === 'kv' ? 'block' : 'none';
-        document.getElementById('cfg_headers_text').style.display = editMode === 'text' ? 'block' : 'none';
-        document.getElementById('body-kv').style.display = editMode === 'kv' ? 'block' : 'none';
-        document.getElementById('cfg_body_text').style.display = editMode === 'text' ? 'block' : 'none';
+        const headersKv = document.getElementById('headers-kv');
+        const headersText = document.getElementById('cfg_headers_text');
+        const bodyKv = document.getElementById('body-kv');
+        const bodyText = document.getElementById('cfg_body_text');
+        if (headersKv) headersKv.style.display = editMode === 'kv' ? 'block' : 'none';
+        if (headersText) headersText.style.display = editMode === 'text' ? 'block' : 'none';
+        if (bodyKv) bodyKv.style.display = editMode === 'kv' ? 'block' : 'none';
+        if (bodyText) bodyText.style.display = editMode === 'text' ? 'block' : 'none';
 
         if (editMode === 'kv') {
           syncHeadersFromText();
@@ -673,6 +756,15 @@
     }
 
     async function copyCurrentConfig(providerName) {
+      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
+      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
+        const hours = document.getElementById('cfg_cycle_hours').value;
+        if (hours && parseInt(hours) > 0) {
+          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
+        } else {
+          resetCyclePath = '';
+        }
+      }
       const config = {
         name: providerName,
         method: document.getElementById('cfg_method').value,
@@ -683,7 +775,7 @@
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: document.getElementById('cfg_reset_cycle_path').value
+        reset_cycle_path: resetCyclePath
       };
       const json = JSON.stringify(config, null, 2);
       await navigator.clipboard.writeText(json);
