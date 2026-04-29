@@ -166,34 +166,36 @@
       let html = '<div class="cards-container">';
       for (let g = 0; g < openaiProviders.length; g++) {
         const p = openaiProviders[g];
-        const hasConfig = balanceConfigs[p.name] && balanceConfigs[p.name].url;
+        const cfg = balanceConfigs[p.name];
+        const willQuery = !!(cfg && cfg.url && cfg.balance_path);
+        const hasBalancePath = !!cfg?.balance_path;
         const apiKeys = p.api_keys || [];
         const color = getGroupColor(p.name);
 
         // If no API keys, show one pending card
         if (apiKeys.length === 0) {
-          const hasBalancePath = balanceConfigs[p.name]?.balance_path;
           html += renderCard({
             provider: p.name,
             groupColor: color,
             apiKeyIndex: 0,
-            success: hasBalancePath ? null : 'pending',
+            success: null, // 初始化固定为 pending 状态
             error: hasBalancePath ? '查询失败' : '待配置余额查询',
             balancePath: hasBalancePath,
+            isLoading: willQuery,
             models: p.models
           });
         } else {
           // One card per API key
           for (let i = 0; i < apiKeys.length; i++) {
-            const hasBalancePath = balanceConfigs[p.name]?.balance_path;
             html += renderCard({
               provider: p.name,
               groupColor: color,
               apiKeyIndex: i,
               apiKey: apiKeys[i],
-              success: hasBalancePath ? null : 'pending',
+              success: null, // 初始化固定为 pending 状态
               error: hasBalancePath ? '查询失败' : '待配置余额查询',
               balancePath: hasBalancePath,
+              isLoading: willQuery,
               models: p.models
             });
           }
@@ -210,32 +212,15 @@
         if (cfg && cfg.url && cfg.balance_path) {
           const apiKeys = p.api_keys || [];
           if (apiKeys.length === 0) {
-            updateCardLoading(p.name, 0, true);
             queries.push(queryAndUpdateCard(p.name, 0, null));
           } else {
             for (let i = 0; i < apiKeys.length; i++) {
-              updateCardLoading(p.name, i, true);
               queries.push(queryAndUpdateCard(p.name, i, apiKeys[i]));
             }
           }
         }
       }
       await Promise.all(queries);
-    }
-
-    function updateCardLoading(providerName, apiKeyIndex, isLoading) {
-      const card = document.getElementById('card-' + providerName + '_' + apiKeyIndex);
-      if (card) {
-        const balanceEl = card.querySelector('.balance');
-        if (balanceEl) {
-          balanceEl.textContent = isLoading ? '查询中...' : '查询失败';
-          balanceEl.style.color = isLoading ? '#f39c12' : '#e74c3c';
-        }
-        const infoEl = card.querySelector('.info');
-        if (infoEl) {
-          infoEl.textContent = isLoading ? '请稍候' : '点击查看错误信息';
-        }
-      }
     }
 
     function renderCard(r) {
@@ -246,10 +231,24 @@
       if (r.apiKey != null) {
         onclickAttr += ', ' + r.apiKeyIndex;
       }
-      let html = '<div class="result-card ' + cardClass + '" id="card-' + cardId + '" data-color="' + color + '" style="border-color:' + color + ';border-left-color:' + color + ';display:flex;" onclick="' + onclickAttr + '">';
-      // Left column: provider name and balance
+      
+      // 判断显示层级顺序
+      let flexOrder = 2; // 默认，在中间
+      if (cardClass === 'success') {
+        flexOrder = 1; // 成功有结果，排第一
+      } else if (cardClass === 'error' || (cardClass === 'pending' && !r.isLoading)) {
+        flexOrder = 3; // 查询失败、或根本未配置查询的，垫底排最后
+      }
+      
+      // 添加 flex-direction: column 以及 order 排序
+      let html = '<div class="result-card ' + cardClass + '" id="card-' + cardId + '" data-color="' + color + '" style="border-color:' + color + ';border-left-color:' + color + ';display:flex;flex-direction:column;order:' + flexOrder + ';" onclick="' + onclickAttr + '">';
+      
+      html += '<div style="display:flex;flex:1;">';
+      // 左侧列：provider name and balance
       html += '<div style="flex:1;display:flex;flex-direction:column;">';
       html += '<div class="name" style="color:' + color + ';font-size:14px;margin-bottom:0;">' + escapeHtml(r.provider) + '</div>';
+      
+      let progressHtml = '';
       if (cardClass === 'pending') {
         if (r.isLoading) {
           html += '<div class="balance" style="color:#f39c12;">查询中...</div>';
@@ -274,15 +273,16 @@
           const usedPercent = total > 0 ? (r.used_balance / total * 100) : 0;
           const progressClass = usedPercent > 90 ? 'danger' : (usedPercent > 70 ? 'warning' : '');
           const progressColor = usedPercent > 90 ? '#e74c3c' : (usedPercent > 70 ? '#f39c12' : color);
-          html += '<div class="progress-bar"><div class="progress ' + progressClass + '" style="width:' + usedPercent.toFixed(1) + '%;background:' + progressColor + '"></div></div>';
+          progressHtml = '<div class="progress-bar" style="width:100%;"><div class="progress ' + progressClass + '" style="width:' + usedPercent.toFixed(1) + '%;background:' + progressColor + '"></div></div>';
         }
       } else {
         html += '<div class="balance">查询失败</div>';
         html += '<div class="error-msg">' + escapeHtml(r.error || '未知错误') + '</div>';
       }
       html += '</div>';
-      // Right column: api key and models
-      html += '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:0;">';
+      
+      // 右侧列：api key and models
+      html += '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:0;margin-left:8px;">';
       if (r.apiKey) {
         const len = r.apiKey.length;
         if (len > 4) {
@@ -295,6 +295,11 @@
         });
       }
       html += '</div>';
+      html += '</div>'; 
+      
+      // 追加进度条
+      html += progressHtml;
+      
       html += '</div>';
       return html;
     }
@@ -311,6 +316,13 @@
           headers: headers
         });
         const data = await resp.json();
+        const cfg = balanceConfigs[providerName];
+        
+        // 拦截覆盖处理“固定日期”
+        if (cfg && cfg.reset_cycle_path && cfg.reset_cycle_path.startsWith('{date:') && cfg.reset_cycle_path.endsWith('}')) {
+          data.reset_cycle = cfg.reset_cycle_path.replace('{date:', '').replace('}', '');
+        }
+
         const card = document.getElementById('card-' + cardId);
         if (card) {
           const groupColor = card.getAttribute('data-color');
@@ -332,6 +344,19 @@
       } catch (e) {
         console.error('Query failed for', providerName, e);
       }
+    }
+
+    // 辅助获取当前重置周期的配置值
+    function getResetCyclePathFromForm() {
+      const mode = document.getElementById('cfg_reset_mode').value;
+      if (mode === 'cycle_hours') {
+        const hours = document.getElementById('cfg_cycle_hours').value;
+        return (hours && parseInt(hours) > 0) ? '{cycle:' + parseInt(hours) + '}' : '';
+      } else if (mode === 'fixed_date') {
+        const dateVal = document.getElementById('cfg_fixed_date').value.trim();
+        return dateVal ? '{date:' + dateVal + '}' : '';
+      }
+      return document.getElementById('cfg_reset_cycle_path').value.trim();
     }
 
     async function showEditModal(providerName, apiKeyIndex) {
@@ -418,10 +443,12 @@
                 <label>重置周期</label>
                 <div style="display:flex;gap:6px;align-items:center;">
                   <select id="cfg_reset_mode" onchange="onResetModeChange()" style="width:90px;flex-shrink:0;">
-                    <option value="custom">自定义</option>
+                    <option value="custom">解析路径</option>
+                    <option value="fixed_date">固定日期</option>
                     <option value="cycle_hours">每x小时</option>
                   </select>
                   <input type="text" id="cfg_reset_cycle_path" placeholder="如: $.reset_time" style="flex:1;">
+                  <input type="text" id="cfg_fixed_date" placeholder="如: 2026-05-29 23:59" style="flex:1;display:none;">
                   <input type="number" id="cfg_cycle_hours" placeholder="小时数，如 24" style="flex:1;display:none;">
                 </div>
               </div>
@@ -458,8 +485,10 @@
       // Initialize reset mode
       if (config.reset_cycle_path && config.reset_cycle_path.startsWith('{cycle:') && config.reset_cycle_path.endsWith('}')) {
         document.getElementById('cfg_reset_mode').value = 'cycle_hours';
-        const hours = config.reset_cycle_path.replace('{cycle:', '').replace('}', '');
-        document.getElementById('cfg_cycle_hours').value = hours;
+        document.getElementById('cfg_cycle_hours').value = config.reset_cycle_path.replace('{cycle:', '').replace('}', '');
+      } else if (config.reset_cycle_path && config.reset_cycle_path.startsWith('{date:') && config.reset_cycle_path.endsWith('}')) {
+        document.getElementById('cfg_reset_mode').value = 'fixed_date';
+        document.getElementById('cfg_fixed_date').value = config.reset_cycle_path.replace('{date:', '').replace('}', '');
       } else {
         document.getElementById('cfg_reset_mode').value = 'custom';
         document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path || '';
@@ -476,15 +505,6 @@
         syncHeadersToText();
         syncBodyToText();
       }
-      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
-      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
-        const hours = document.getElementById('cfg_cycle_hours').value;
-        if (hours && parseInt(hours) > 0) {
-          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
-        } else {
-          resetCyclePath = '';
-        }
-      }
       const config = {
         name: providerName,
         enabled: true,
@@ -496,7 +516,7 @@
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: resetCyclePath
+        reset_cycle_path: getResetCyclePathFromForm()
       };
 
       try {
@@ -543,15 +563,6 @@
         alert('请先填写 URL');
         return;
       }
-      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
-      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
-        const hours = document.getElementById('cfg_cycle_hours').value;
-        if (hours && parseInt(hours) > 0) {
-          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
-        } else {
-          resetCyclePath = '';
-        }
-      }
       const provider = openaiProviders.find(p => p.name === providerName);
       const apiKeys = provider?.api_keys || [];
       const apiKey = apiKeyIndex != null && apiKeys[apiKeyIndex] ? apiKeys[apiKeyIndex] : (apiKeys[0] || null);
@@ -566,7 +577,7 @@
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: resetCyclePath
+        reset_cycle_path: getResetCyclePathFromForm()
       };
       try {
         const testBtn = document.querySelector('button[onclick^="testQuery"]');
@@ -644,13 +655,11 @@
         const mode = document.getElementById('cfg_reset_mode').value;
         const pathInput = document.getElementById('cfg_reset_cycle_path');
         const hoursInput = document.getElementById('cfg_cycle_hours');
-        if (mode === 'cycle_hours') {
-          pathInput.style.display = 'none';
-          hoursInput.style.display = 'block';
-        } else {
-          pathInput.style.display = 'block';
-          hoursInput.style.display = 'none';
-        }
+        const dateInput = document.getElementById('cfg_fixed_date');
+        
+        pathInput.style.display = mode === 'custom' ? 'block' : 'none';
+        hoursInput.style.display = mode === 'cycle_hours' ? 'block' : 'none';
+        dateInput.style.display = mode === 'fixed_date' ? 'block' : 'none';
       }
 
       function toggleEditMode(forceMode) {
@@ -756,15 +765,6 @@
     }
 
     async function copyCurrentConfig(providerName) {
-      let resetCyclePath = document.getElementById('cfg_reset_cycle_path').value.trim();
-      if (document.getElementById('cfg_reset_mode').value === 'cycle_hours') {
-        const hours = document.getElementById('cfg_cycle_hours').value;
-        if (hours && parseInt(hours) > 0) {
-          resetCyclePath = '{cycle:' + parseInt(hours) + '}';
-        } else {
-          resetCyclePath = '';
-        }
-      }
       const config = {
         name: providerName,
         method: document.getElementById('cfg_method').value,
@@ -775,7 +775,7 @@
         balance_type: document.getElementById('cfg_balance_type').value,
         balance_multiplier: parseFloat(document.getElementById('cfg_balance_multiplier').value) || 1,
         used_balance_path: document.getElementById('cfg_used_balance_path').value,
-        reset_cycle_path: resetCyclePath
+        reset_cycle_path: getResetCyclePathFromForm()
       };
       const json = JSON.stringify(config, null, 2);
       await navigator.clipboard.writeText(json);
@@ -805,7 +805,19 @@
         if (config.balance_type) document.getElementById('cfg_balance_type').value = config.balance_type;
         if (config.balance_multiplier != null) document.getElementById('cfg_balance_multiplier').value = config.balance_multiplier;
         if (config.used_balance_path) document.getElementById('cfg_used_balance_path').value = config.used_balance_path;
-        if (config.reset_cycle_path) document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path;
+        if (config.reset_cycle_path) {
+          if (config.reset_cycle_path.startsWith('{cycle:')) {
+            document.getElementById('cfg_reset_mode').value = 'cycle_hours';
+            document.getElementById('cfg_cycle_hours').value = config.reset_cycle_path.replace('{cycle:', '').replace('}', '');
+          } else if (config.reset_cycle_path.startsWith('{date:')) {
+            document.getElementById('cfg_reset_mode').value = 'fixed_date';
+            document.getElementById('cfg_fixed_date').value = config.reset_cycle_path.replace('{date:', '').replace('}', '');
+          } else {
+            document.getElementById('cfg_reset_mode').value = 'custom';
+            document.getElementById('cfg_reset_cycle_path').value = config.reset_cycle_path;
+          }
+          onResetModeChange();
+        }
         showToast('配置已从剪贴板粘贴');
       } catch (e) {
         if (e.message.includes('JSON')) {
@@ -816,40 +828,18 @@
       }
     }
 
-    async function saveConfigDirectly(providerName, config) {
-      try {
-        const resp = await fetch('/v0/balance/providers');
-        const data = await resp.json();
-        let providers = data.providers || [];
-        const idx = providers.findIndex(p => p.name === providerName);
-        if (idx >= 0) {
-          providers[idx] = config;
-        } else {
-          providers.push(config);
-        }
-        const saveResp = await fetch('/v0/balance/providers', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providers })
-        });
-        if (saveResp.ok) {
-          balanceConfigs[providerName] = config;
-        }
-      } catch (e) {
-        console.error('Save failed:', e);
-      }
-    }
-
     function formatRemainTime(timestamp) {
       // -1 means unlimited
       if (timestamp === -1 || timestamp === '-1') {
         return '无限期';
       }
+      if (!timestamp) return '';
+
       // Handle ISO date string or Unix timestamp (10 or 13 digits)
       let endTime;
-      if (isNaN(timestamp)) {
-        // Parse ISO date string like "2026-07-11T15:21:11"
-        endTime = new Date(timestamp).getTime();
+      if (typeof timestamp === 'string' && isNaN(timestamp)) {
+        // Parse string like "2026-07-11T15:21:11" or user input "2026-05-29 23:59"
+        endTime = new Date(timestamp.replace(' ', 'T')).getTime();
       } else {
         endTime = parseInt(timestamp);
         // If 10 digit timestamp (seconds), convert to milliseconds
@@ -857,6 +847,9 @@
           endTime = endTime * 1000;
         }
       }
+      
+      if (isNaN(endTime)) return '格式错误';
+
       const now = Date.now();
       let diff = endTime - now;
 

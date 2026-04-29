@@ -89,5 +89,5 @@ providers:
       balance_type: float
       balance_multiplier: 1e-06
       used_balance_path: data.usage.items[0].used
-      reset_cycle_path: '{cycle:24}'
+      reset_cycle_path: '{date:2026-05-29 23:59}'
       enable_proxy: false
